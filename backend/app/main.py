@@ -93,15 +93,12 @@ from app.services.regras_negocio import (
     transferir_estoque,
 )
 
-BASE_PROJECT_DIR = Path("/media/rodrigo/Downloads/ai-agents/workspace/erp-mercados")
+BASE_PROJECT_DIR = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = BASE_PROJECT_DIR / "frontend"
-FRONTEND_DIR.mkdir(parents=True, exist_ok=True)
 LOG_AO_VIVO = Path("/media/rodrigo/Downloads/ai-agents/logs/ao_vivo.log")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Inicialização segura do banco de dados no startup."""
+def _garantir_banco_inicializado() -> None:
     try:
         from app.core.seed import inicializar_e_popular_banco
 
@@ -114,7 +111,17 @@ async def lifespan(app: FastAPI):
             Base.metadata.create_all(bind=engine)
         except Exception as inner_exc:
             print(f"[Startup] Erro crítico criando tabelas: {inner_exc}")
+
+
+_garantir_banco_inicializado()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Inicialização segura do banco de dados no startup."""
+    _garantir_banco_inicializado()
     yield
+
 
 
 app = FastAPI(
@@ -918,6 +925,16 @@ def rota_raiz():
 </html>""")
 
 
+@app.get("/app.js", tags=["Frontend"])
+def rota_app_js():
+    """Serve o arquivo JavaScript principal do frontend."""
+    app_js = FRONTEND_DIR / "app.js"
+    if app_js.exists():
+        return FileResponse(app_js, media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="app.js não encontrado")
+
+
 # Monta os arquivos estáticos do frontend se o diretório existir
 if FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+

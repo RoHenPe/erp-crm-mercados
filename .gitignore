@@ -8,3 +8,4 @@ database/*.db-journal
 .env.local
 .vercel/
 node_modules/
+.vercel
