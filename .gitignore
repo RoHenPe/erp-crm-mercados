@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+database/*.db
+database/*.db-journal
+.env
+.env.local
+.vercel/
+node_modules/

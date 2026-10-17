@@ -1,0 +1,17 @@
+services:
+  erp-mercados-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: srv_erp_mercados
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - ERP_PG_HOST=127.0.0.1
+      - ERP_PG_PORT=5432
+      - ERP_PG_USER=rodrigo
+      - ERP_PG_PASS=rodrigo123
+      - ERP_PG_DB=erp_mercados_db
+    volumes:
+      - ../frontend:/app/frontend:ro
+      - ../backend:/app/backend
