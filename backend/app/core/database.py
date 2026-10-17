@@ -21,17 +21,19 @@ else:
     SQLITE_PATH = LOCAL_DOWNLOADS_DIR / "database" / "erp_mercados.db"
     SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-PG_HOST = os.getenv("ERP_PG_HOST", "192.168.15.109")
-PG_PORT = int(os.getenv("ERP_PG_PORT", "5432"))
 PG_USER = os.getenv("ERP_PG_USER", "rodrigo")
 PG_PASS = os.getenv("ERP_PG_PASS", "rodrigo123")
 PG_DB = os.getenv("ERP_PG_DB", "erp_mercados_db")
 
 
-def _postgres_acessivel(host: str, port: int, timeout: float = 1.2) -> bool:
+def _postgres_acessivel(host: str, port: int, timeout: float = 1.5) -> bool:
     if os.getenv("ERP_FORCE_SQLITE", "").lower() in ("1", "true", "yes"):
         return False
-    if os.getenv("VERCEL") and host.startswith("192.168."):
+    if os.getenv("VERCEL") and (host.startswith("192.168.") or host.startswith("100.") or host == "127.0.0.1"):
+        return False
+    try:
+        import psycopg2  # noqa: F401
+    except ImportError:
         return False
     try:
         with socket.create_connection((host, port), timeout=timeout):
@@ -41,19 +43,36 @@ def _postgres_acessivel(host: str, port: int, timeout: float = 1.2) -> bool:
 
 
 def obter_url_banco() -> tuple[str, str]:
-    """Retorna (database_url, modo_banco) priorizando PostgreSQL na rede ou SQLite Cloud na Vercel."""
+    """Retorna (database_url, modo_banco) priorizando o banco PostgreSQL do servidor."""
     url_env = os.getenv("DATABASE_URL", "").strip()
     if url_env:
-        return url_env, "custom_database_url"
+        return url_env, "postgresql_producao"
 
-    if _postgres_acessivel(PG_HOST, PG_PORT):
-        return (
-            f"postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}",
-            f"postgresql ({PG_HOST}:{PG_PORT}/{PG_DB})",
-        )
+    env_host = os.getenv("ERP_PG_HOST", "").strip()
+    env_port = int(os.getenv("ERP_PG_PORT", "5432"))
 
-    modo = "vercel_cloud_sqlite (/tmp/erp_mercados.db)" if os.getenv("VERCEL") else f"sqlite ({SQLITE_PATH})"
-    return f"sqlite:///{SQLITE_PATH}", modo
+    candidatos: list[tuple[str, int]] = []
+    if env_host:
+        candidatos.append((env_host, env_port))
+
+    for padrao in [
+        ("127.0.0.1", 5432),
+        ("192.168.15.109", 5432),
+        ("100.119.122.10", 5432),
+        ("bore.pub", 45432),
+    ]:
+        if padrao not in candidatos:
+            candidatos.append(padrao)
+
+    for host, port in candidatos:
+        timeout = 0.6 if host in ("127.0.0.1", "192.168.15.109", "100.119.122.10") else 2.0
+        if _postgres_acessivel(host, port, timeout=timeout):
+            return (
+                f"postgresql+psycopg2://{PG_USER}:{PG_PASS}@{host}:{port}/{PG_DB}",
+                "postgresql_producao",
+            )
+
+    return f"sqlite:///{SQLITE_PATH}", "sqlite_contingencia"
 
 
 DATABASE_URL, DATABASE_MODE = obter_url_banco()
