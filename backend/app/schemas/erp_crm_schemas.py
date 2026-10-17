@@ -1,4 +1,4 @@
-"""Schemas Pydantic para validação e serialização da API ERP + CRM."""
+"""Schemas de Entrada e Saída da API HelpDmais."""
 
 from __future__ import annotations
 
@@ -8,85 +8,205 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
-# Filiais
+# 0. Cadastro de Empresa, Autenticação e Equipe
 # ---------------------------------------------------------------------------
-class FilialBase(BaseModel):
-    codigo: str = Field(..., max_length=20, examples=["CD-01", "LOJA-01"])
-    nome: str = Field(..., max_length=120, examples=["Hipermercado Matriz Central"])
-    bandeira: str = Field(..., max_length=80, examples=["Hiper", "Atacarejo", "Express", "CD"])
-    cnpj: str = Field(..., max_length=25, examples=["12.345.678/0001-90"])
-    cidade: str = Field(..., max_length=80, examples=["São Paulo - SP"])
-    gerente: str = Field(..., max_length=100, examples=["Carlos Silva"])
-    meta_mensal: float = Field(default=500000.0, ge=0.0)
+class RegistroComercioRequest(BaseModel):
+    nome_fantasia: str = Field(..., min_length=2, max_length=140)
+    razao_social: str = Field(..., min_length=2, max_length=180)
+    cnpj_matriz: str = Field(..., min_length=11, max_length=30)
+    segmento_varejo: str = Field(default="Supermercado & Varejo", max_length=80)
+    cidade_uf: str = Field(..., min_length=2, max_length=80)
+    telefone: str = Field(default="", max_length=40)
+    cor_tema: str = Field(default="#714B67", max_length=20)
+    # Dados da Unidade Matriz inicial
+    nome_filial_matriz: str = Field(default="Matriz Principal", max_length=120)
+    codigo_filial_matriz: str = Field(default="MATRIZ-01", max_length=30)
+    bandeira_matriz: str = Field(default="Matriz", max_length=80)
+    meta_mensal_matriz: float = Field(default=150000.0, ge=0.0)
+    # Dados do Administrador
+    admin_nome: str = Field(..., min_length=2, max_length=120)
+    admin_email: str = Field(..., min_length=5, max_length=140)
+    admin_senha: str = Field(..., min_length=6, max_length=80)
+    admin_cargo: str = Field(default="Proprietário / Administrador", max_length=90)
+
+
+class TenantBase(BaseModel):
+    slug: str = Field(..., max_length=80)
+    nome_fantasia: str = Field(..., max_length=140)
+    razao_social: str = Field(..., max_length=180)
+    cnpj_matriz: str = Field(..., max_length=30)
+    segmento_varejo: str = Field(default="Supermercado & Varejo", max_length=80)
+    cidade_uf: str = Field(default="", max_length=80)
+    telefone: str = Field(default="", max_length=40)
+    cor_tema: str = Field(default="#714B67", max_length=20)
+    ativo: bool = True
+
+
+class TenantResponse(TenantBase):
+    id: int
+    total_filiais: int = 0
+    total_usuarios: int = 0
+    total_produtos: int = 0
+    total_clientes_crm: int = 0
+    criado_em: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PerfilRBACInfo(BaseModel):
+    codigo: str
+    nome: str
+    nivel_acesso: int
+    cor_badge: str
+    modulos_permitidos: list[str]
+    permissoes_acoes: list[str]
+    descricao: str
+
+
+class UsuarioCreate(BaseModel):
+    filial_id: int | None = None
+    nome: str = Field(..., min_length=2, max_length=120)
+    email: str = Field(..., min_length=5, max_length=140)
+    senha: str = Field(..., min_length=6, max_length=80)
+    cargo: str = Field(..., min_length=2, max_length=90)
+    perfil_rbac: str = Field(default="CAIXA", max_length=40)
+    ativo: bool = True
+
+
+class UsuarioUpdateStatus(BaseModel):
+    perfil_rbac: str | None = None
+    filial_id: int | None = None
+    cargo: str | None = None
+    ativo: bool | None = None
+    nova_senha: str | None = None
+
+
+class UsuarioResponse(BaseModel):
+    id: int
+    tenant_id: int
+    tenant_nome: str | None = None
+    filial_id: int | None = None
+    filial_nome: str | None = None
+    nome: str
+    email: str
+    cargo: str
+    perfil_rbac: str
+    modulos_permitidos: list[str] = []
+    permissoes_acoes: list[str] = []
+    nivel_acesso: int = 3
+    ativo: bool = True
+    ultimo_acesso: datetime | None = None
+    criado_em: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=140)
+    senha: str = Field(..., min_length=1, max_length=100)
+
+
+# ---------------------------------------------------------------------------
+# 1. Unidades / Filiais
+# ---------------------------------------------------------------------------
+class FilialCreate(BaseModel):
+    codigo: str = Field(..., max_length=30)
+    nome: str = Field(..., max_length=120)
+    bandeira: str = Field(default="Loja", max_length=80)
+    cnpj: str = Field(..., max_length=30)
+    cidade: str = Field(..., max_length=80)
+    gerente: str = Field(..., max_length=100)
+    meta_mensal: float = Field(default=100000.0, ge=0.0)
     ativa: bool = True
 
 
-class FilialCreate(FilialBase):
-    pass
-
-
-class FilialResponse(FilialBase):
+class FilialResponse(FilialCreate):
     id: int
+    tenant_id: int
 
     model_config = ConfigDict(from_attributes=True)
 
 
+class LoginResponse(BaseModel):
+    autenticado: bool
+    token_sessao: str
+    usuario: UsuarioResponse
+    tenant: TenantResponse
+    filiais: list[FilialResponse] = []
+    perfil_detalhes: PerfilRBACInfo
+    mensagem: str
+
+
 # ---------------------------------------------------------------------------
-# Fornecedores
+# 2. Fornecedores
 # ---------------------------------------------------------------------------
-class FornecedorBase(BaseModel):
+class FornecedorCreate(BaseModel):
     razao_social: str = Field(..., max_length=150)
     nome_fantasia: str = Field(..., max_length=120)
-    cnpj: str = Field(..., max_length=25)
+    cnpj: str = Field(..., max_length=30)
     categoria_principal: str = Field(..., max_length=80)
     prazo_entrega_dias: int = Field(default=3, ge=1)
     telefone: str = Field(default="", max_length=40)
-    avaliacao: float = Field(default=4.8, ge=0.0, le=5.0)
+    email: str = Field(default="", max_length=120)
+    avaliacao: float = Field(default=5.0, ge=0.0, le=5.0)
 
 
-class FornecedorCreate(FornecedorBase):
-    pass
-
-
-class FornecedorResponse(FornecedorBase):
+class FornecedorResponse(FornecedorCreate):
     id: int
+    tenant_id: int
 
     model_config = ConfigDict(from_attributes=True)
 
 
 # ---------------------------------------------------------------------------
-# Produtos
+# 3. Produtos
 # ---------------------------------------------------------------------------
-class ProdutoBase(BaseModel):
-    sku: str = Field(..., max_length=30)
-    ean: str = Field(..., max_length=20)
+class ProdutoCreate(BaseModel):
+    sku: str = Field(..., max_length=40)
+    ean: str = Field(..., max_length=30)
     nome: str = Field(..., max_length=160)
     departamento: str = Field(..., max_length=80)
     unidade: str = Field(default="UN", max_length=10)
     preco_custo: float = Field(..., gt=0.0)
     preco_venda: float = Field(..., gt=0.0)
-    preco_clube_crm: float = Field(..., gt=0.0)
-    cashback_percentual: float = Field(default=2.0, ge=0.0, le=100.0)
+    preco_clube_crm: float | None = Field(default=None, gt=0.0)
+    cashback_percentual: float = Field(default=1.0, ge=0.0, le=100.0)
+    estoque_minimo_padrao: float = Field(default=10.0, ge=0.0)
     fornecedor_id: int | None = None
     perecivel: bool = False
     ativo: bool = True
+    estoque_inicial: float = Field(default=0.0, ge=0.0)
+    filial_inicial_id: int | None = None
+    numero_lote_inicial: str | None = None
+    data_validade_inicial: date | None = None
 
 
-class ProdutoCreate(ProdutoBase):
-    pass
-
-
-class ProdutoResponse(ProdutoBase):
+class ProdutoResponse(BaseModel):
     id: int
+    tenant_id: int
+    sku: str
+    ean: str
+    nome: str
+    departamento: str
+    unidade: str
+    preco_custo: float
+    preco_venda: float
+    preco_clube_crm: float
+    cashback_percentual: float
+    estoque_minimo_padrao: float = 10.0
+    fornecedor_id: int | None = None
+    perecivel: bool
+    ativo: bool
 
     model_config = ConfigDict(from_attributes=True)
 
 
 # ---------------------------------------------------------------------------
-# Lotes & Estoque
+# 4. Estoque & Lotes
 # ---------------------------------------------------------------------------
 class LoteValidadeResponse(BaseModel):
     id: int
+    tenant_id: int
     filial_id: int
     produto_id: int
     numero_lote: str
@@ -101,15 +221,18 @@ class LoteValidadeResponse(BaseModel):
 
 class EstoqueItemResponse(BaseModel):
     id: int
+    tenant_id: int
     filial_id: int
     filial_nome: str | None = None
     produto_id: int
     produto_nome: str | None = None
     produto_sku: str | None = None
+    produto_ean: str | None = None
     departamento: str | None = None
     unidade: str | None = "UN"
     preco_custo: float | None = 0.0
     preco_venda: float | None = 0.0
+    preco_clube_crm: float | None = 0.0
     quantidade_atual: float
     estoque_minimo: float
     estoque_maximo: float
@@ -123,7 +246,7 @@ class EstoqueItemResponse(BaseModel):
 class EstoqueMovimentoRequest(BaseModel):
     filial_id: int
     produto_id: int
-    tipo: Literal["ENTRADA_COMPRA", "QUEBRA_PERDA", "AJUSTE_INVENTARIO"]
+    tipo: Literal["ENTRADA_COMPRA", "AJUSTE_POSITIVO", "QUEBRA_PERDA", "AJUSTE_INVENTARIO", "BAIXA"]
     quantidade: float = Field(..., gt=0.0)
     observacao: str = Field(default="", max_length=255)
     numero_lote: str | None = None
@@ -140,7 +263,7 @@ class EstoqueTransferenciaRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Pedidos de Compra
+# 5. Pedidos de Compra
 # ---------------------------------------------------------------------------
 class PedidoCompraCreate(BaseModel):
     filial_id: int
@@ -152,10 +275,14 @@ class PedidoCompraCreate(BaseModel):
 
 class PedidoCompraResponse(BaseModel):
     id: int
+    tenant_id: int
     numero_pedido: str
     filial_id: int
+    filial_nome: str | None = None
     fornecedor_id: int
+    fornecedor_nome: str | None = None
     produto_id: int
+    produto_nome: str | None = None
     quantidade: float
     custo_unitario: float
     valor_total: float
@@ -166,10 +293,10 @@ class PedidoCompraResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# CRM: Clientes & Campanhas
+# 6. Clientes & Campanhas (CRM)
 # ---------------------------------------------------------------------------
 class ClienteCRMCreate(BaseModel):
-    cpf: str = Field(..., max_length=20)
+    cpf: str = Field(..., max_length=25)
     nome: str = Field(..., max_length=140)
     whatsapp: str = Field(default="", max_length=30)
     email: str = Field(default="", max_length=120)
@@ -178,6 +305,7 @@ class ClienteCRMCreate(BaseModel):
 
 class TransacaoCashbackResponse(BaseModel):
     id: int
+    tenant_id: int
     cliente_id: int
     venda_id: int | None = None
     tipo: str
@@ -191,6 +319,7 @@ class TransacaoCashbackResponse(BaseModel):
 
 class ClienteCRMResponse(BaseModel):
     id: int
+    tenant_id: int
     cpf: str
     nome: str
     whatsapp: str
@@ -211,16 +340,17 @@ class ClienteCRMResponse(BaseModel):
 class CampanhaCRMCreate(BaseModel):
     titulo: str = Field(..., max_length=140)
     segmento_alvo: str = Field(default="TODOS", max_length=40)
-    canal: str = Field(default="WHATSAPP_E_APP", max_length=40)
+    canal: str = Field(default="WHATSAPP", max_length=40)
     desconto_extra_pct: float = Field(default=5.0, ge=0.0)
-    cashback_bonus_pct: float = Field(default=3.0, ge=0.0)
+    cashback_bonus_pct: float = Field(default=2.0, ge=0.0)
     mensagem_template: str = Field(default="")
-    clientes_impactados: int = Field(default=0, ge=0)
-    conversao_estimada_pct: float = Field(default=18.5, ge=0.0)
 
 
 class CampanhaCRMResponse(CampanhaCRMCreate):
     id: int
+    tenant_id: int
+    clientes_impactados: int
+    conversao_estimada_pct: float
     ativa: bool
     criada_em: datetime
 
@@ -228,8 +358,35 @@ class CampanhaCRMResponse(CampanhaCRMCreate):
 
 
 # ---------------------------------------------------------------------------
-# PDV: Vendas & Itens
+# 7. Ponto de Venda (PDV)
 # ---------------------------------------------------------------------------
+class SessaoCaixaAbrirRequest(BaseModel):
+    filial_id: int
+    valor_abertura: float = Field(default=0.0, ge=0.0)
+
+
+class SessaoCaixaFecharRequest(BaseModel):
+    valor_fechamento: float = Field(..., ge=0.0)
+
+
+class SessaoCaixaResponse(BaseModel):
+    id: int
+    tenant_id: int
+    filial_id: int
+    filial_nome: str | None = None
+    usuario_id: int | None = None
+    operador_nome: str
+    valor_abertura: float
+    valor_fechamento: float | None = None
+    total_vendido: float
+    qtd_vendas: int
+    status: str
+    aberta_em: datetime
+    fechada_em: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ItemVendaRequest(BaseModel):
     produto_id: int
     quantidade: float = Field(..., gt=0.0)
@@ -258,6 +415,7 @@ class ItemVendaDetalhe(BaseModel):
 
 class VendaPDVResponse(BaseModel):
     venda_id: int
+    tenant_id: int
     numero_cupom: str
     filial_id: int
     filial_nome: str
@@ -279,7 +437,7 @@ class VendaPDVResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Financeiro & DRE
+# 8. Financeiro & Demonstrativo de Resultados (DRE)
 # ---------------------------------------------------------------------------
 class LancamentoFinanceiroCreate(BaseModel):
     filial_id: int
@@ -300,7 +458,9 @@ class LancamentoFinanceiroCreate(BaseModel):
 
 class LancamentoFinanceiroResponse(BaseModel):
     id: int
+    tenant_id: int
     filial_id: int
+    filial_nome: str | None = None
     tipo: str
     categoria_dre: str
     descricao: str
@@ -341,10 +501,11 @@ class DREResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Dashboard & Agentes Status
+# 9. Resumo de Indicadores (Painel)
 # ---------------------------------------------------------------------------
 class FilialMetaResumo(BaseModel):
     filial_id: int
+    tenant_id: int
     nome: str
     bandeira: str
     vendas_mes: float
@@ -361,8 +522,13 @@ class TopProdutoVendido(BaseModel):
 
 
 class DashboardResumoResponse(BaseModel):
+    software_nome: str = "HelpDmais"
+    tenant_ativo_id: int
+    tenant_ativo_nome: str
     faturamento_total: float
     lucro_liquido: float
+    total_produtos: int = 0
+    total_fornecedores: int = 0
     total_clientes_crm: int
     cashback_em_circulacao: float
     alertas_ruptura: list[dict[str, Any]]
@@ -370,15 +536,3 @@ class DashboardResumoResponse(BaseModel):
     vendas_por_filial_vs_meta: list[FilialMetaResumo]
     top_5_produtos: list[TopProdutoVendido]
     ultimas_vendas: list[dict[str, Any]]
-
-
-class AgentesStatusResponse(BaseModel):
-    status: str
-    tiers: dict[str, Any] = {}
-    tiers_crewai: dict[str, Any] = {}
-    postgres_host: str
-    postgres_conectado: bool
-    modo_banco: str
-    ultimas_linhas_log: list[str]
-    timestamp: str
-
